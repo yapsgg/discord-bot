@@ -41,6 +41,12 @@ sed -e "s|__APP_DIR__|$APP_DIR|g" \
 
 systemctl daemon-reload
 systemctl enable yapsgg-bot >/dev/null
-systemctl restart yapsgg-bot
-sleep 2
-systemctl --no-pager --full status yapsgg-bot || true
+
+if grep -q '^DISCORD_TOKEN=.\+' "$ENV_FILE"; then
+  systemctl restart yapsgg-bot
+  sleep 2
+  systemctl --no-pager --full status yapsgg-bot || true
+else
+  echo ">> DISCORD_TOKEN is empty in $ENV_FILE; not starting the service yet."
+  echo "   set your secrets, then run: sudo systemctl restart yapsgg-bot"
+fi
