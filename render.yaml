@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: saidai-bot
+    name: yapsgg-bot
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -14,3 +14,5 @@ services:
         sync: false
       - key: GUILD_ID
         sync: false
+      - key: MAX_UPLOAD_MB
+        value: 8
