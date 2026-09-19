@@ -14,6 +14,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 import ai
+import opencode as oc
 
 load_dotenv()
 
@@ -73,6 +74,8 @@ class YapsGGBot(commands.Bot):
 
 
 bot = YapsGGBot()
+
+OC_SESSIONS = {}
 
 
 class HealthServer:
@@ -229,6 +232,19 @@ async def on_message(message):
         )
     prompt = prompt.strip() or "Hello!"
 
+    session_id = OC_SESSIONS.get(message.channel.id)
+    if session_id:
+        try:
+            async with message.channel.typing():
+                answer = await oc.prompt(session_id, prompt)
+            await send_long(message.reply, answer)
+        except oc.OpenCodeError as error:
+            await message.reply(f"OpenCode error: {error}")
+        except Exception:
+            log.exception("OpenCode mention handler failed")
+            await message.reply("Something went wrong talking to OpenCode.")
+        return
+
     try:
         async with message.channel.typing():
             messages = [{"role": "system", "content": ai.SYSTEM_PROMPT}]
@@ -283,6 +299,100 @@ async def summarize(
     ]
     answer = await ai.chat(messages)
     await send_long(interaction.followup.send, answer)
+
+
+oc_group = app_commands.Group(
+    name="oc", description="Control the OpenCode agent on the server"
+)
+
+
+@oc_group.command(
+    name="start", description="Start a new OpenCode session for this channel"
+)
+async def oc_start(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True)
+    try:
+        session_id = await oc.create_session(
+            f"discord-{interaction.channel_id}"
+        )
+    except oc.OpenCodeError as error:
+        await interaction.followup.send(f"Could not start OpenCode: {error}")
+        return
+    OC_SESSIONS[interaction.channel_id] = session_id
+    await interaction.followup.send(
+        f"OpenCode session started (`{session_id}`) using "
+        f"`{oc.PROVIDER_ID}/{oc.MODEL_ID}`.\n"
+        "Mention me with instructions, or use `/oc prompt`. "
+        "Use `/oc stop` to abort."
+    )
+
+
+@oc_group.command(name="prompt", description="Send a prompt to OpenCode")
+@app_commands.describe(text="What you want OpenCode to do")
+async def oc_prompt(interaction: discord.Interaction, text: str):
+    session_id = OC_SESSIONS.get(interaction.channel_id)
+    if not session_id:
+        await interaction.response.send_message(
+            "No active session here. Run `/oc start` first.", ephemeral=True
+        )
+        return
+    await interaction.response.defer(thinking=True)
+    try:
+        answer = await oc.prompt(session_id, text)
+    except oc.OpenCodeError as error:
+        await interaction.followup.send(f"OpenCode error: {error}")
+        return
+    await send_long(interaction.followup.send, answer)
+
+
+@oc_group.command(name="stop", description="Abort the OpenCode session")
+async def oc_stop(interaction: discord.Interaction):
+    session_id = OC_SESSIONS.get(interaction.channel_id)
+    if not session_id:
+        await interaction.response.send_message(
+            "No active session here.", ephemeral=True
+        )
+        return
+    await interaction.response.defer(thinking=True)
+    try:
+        await oc.abort(session_id)
+    except oc.OpenCodeError as error:
+        await interaction.followup.send(f"OpenCode error: {error}")
+        return
+    await interaction.followup.send(
+        f"Aborted session `{session_id}`. Use `/oc start` for a new one."
+    )
+
+
+@oc_group.command(name="status", description="Show OpenCode server status")
+async def oc_status(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
+    lines = [f"Server: `{oc.BASE_URL}`", f"Model: `{oc.PROVIDER_ID}/{oc.MODEL_ID}`"]
+    try:
+        info = await oc.health()
+        lines.append(f"Health: `{info}`")
+    except oc.OpenCodeError as error:
+        lines.append(f"Health: **down** ({error})")
+    session_id = OC_SESSIONS.get(interaction.channel_id)
+    lines.append(f"Session: `{session_id or 'none'}`")
+    await interaction.followup.send("\n".join(lines))
+
+
+@oc_group.command(
+    name="connect", description="Set the OpenRouter API key for OpenCode"
+)
+@app_commands.describe(key="Your OpenRouter API key (sk-or-v1-...)")
+async def oc_connect(interaction: discord.Interaction, key: str):
+    await interaction.response.defer(thinking=True, ephemeral=True)
+    try:
+        await oc.set_api_key(key)
+    except oc.OpenCodeError as error:
+        await interaction.followup.send(f"Could not set key: {error}")
+        return
+    await interaction.followup.send("OpenRouter API key saved.")
+
+
+bot.tree.add_command(oc_group)
 
 
 async def fetch_and_send(interaction: discord.Interaction, link: str):
