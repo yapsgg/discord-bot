@@ -18,3 +18,5 @@ services:
         value: 8
       - key: ENABLE_MESSAGE_CONTENT
         value: "false"
+      - key: COOKIES_FILE
+        sync: false

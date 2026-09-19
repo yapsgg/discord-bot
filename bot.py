@@ -29,11 +29,17 @@ ENABLE_MESSAGE_CONTENT = (
 )
 PORT = os.getenv("PORT")
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "8")) * 1024 * 1024
+COOKIES_FILE = os.getenv("COOKIES_FILE")
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 X_LINK_RE = re.compile(
     r"^https?://(?:www\.)?(?:x\.com|twitter\.com)/[^/]+/status/\d+",
+    re.IGNORECASE,
+)
+IG_LINK_RE = re.compile(
+    r"^https?://(?:www\.)?instagram\.com/"
+    r"(?:[A-Za-z0-9_.]+/)?(?:p|reel|reels|tv)/[A-Za-z0-9_-]+",
     re.IGNORECASE,
 )
 
@@ -110,6 +116,8 @@ def download_video(url, outdir):
         "noprogress": True,
         "restrictfilenames": True,
     }
+    if COOKIES_FILE:
+        opts["cookiefile"] = COOKIES_FILE
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         downloads = info.get("requested_downloads") or []
@@ -185,15 +193,7 @@ async def ping_slash(interaction: discord.Interaction):
     )
 
 
-@bot.tree.command(name="x", description="Download a video from X (Twitter)")
-@app_commands.describe(link="The link to the X/Twitter post")
-async def x(interaction: discord.Interaction, link: str):
-    if not X_LINK_RE.match(link.strip()):
-        await interaction.response.send_message(
-            "Provide a valid x.com or twitter.com post link.", ephemeral=True
-        )
-        return
-
+async def fetch_and_send(interaction: discord.Interaction, link: str):
     await interaction.response.defer()
     try:
         with tempfile.TemporaryDirectory() as tmp:
@@ -222,10 +222,35 @@ async def x(interaction: discord.Interaction, link: str):
                 file=discord.File(path, filename="video.mp4")
             )
     except Exception as error:
-        log.exception("X download failed")
+        log.exception("Download failed for %s", link)
         await interaction.followup.send(
             f"Could not download that video: {error}", ephemeral=True
         )
+
+
+@bot.tree.command(name="x", description="Download a video from X (Twitter)")
+@app_commands.describe(link="The link to the X/Twitter post")
+async def x(interaction: discord.Interaction, link: str):
+    if not X_LINK_RE.match(link.strip()):
+        await interaction.response.send_message(
+            "Provide a valid x.com or twitter.com post link.", ephemeral=True
+        )
+        return
+    await fetch_and_send(interaction, link)
+
+
+@bot.tree.command(
+    name="ig", description="Download an Instagram post or reel"
+)
+@app_commands.describe(link="The link to the Instagram post or reel")
+async def ig(interaction: discord.Interaction, link: str):
+    if not IG_LINK_RE.match(link.strip()):
+        await interaction.response.send_message(
+            "Provide a valid instagram.com post, reel, or TV link.",
+            ephemeral=True,
+        )
+        return
+    await fetch_and_send(interaction, link)
 
 
 def token_looks_valid(value):
