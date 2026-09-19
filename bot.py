@@ -23,7 +23,10 @@ log = logging.getLogger("yapsgg-bot")
 
 TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip().strip("\"'").strip()
 PREFIX = os.getenv("PREFIX", "!")
-GUILD_ID = os.getenv("GUILD_ID")
+GUILD_ID = (os.getenv("GUILD_ID") or "").strip()
+ENABLE_MESSAGE_CONTENT = (
+    os.getenv("ENABLE_MESSAGE_CONTENT", "false").lower() == "true"
+)
 PORT = os.getenv("PORT")
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "8")) * 1024 * 1024
 
@@ -38,8 +41,7 @@ X_LINK_RE = re.compile(
 class YapsGGBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
+        intents.message_content = ENABLE_MESSAGE_CONTENT
         super().__init__(command_prefix=PREFIX, intents=intents)
 
     async def setup_hook(self):
