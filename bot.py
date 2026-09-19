@@ -44,13 +44,22 @@ class YapsGGBot(commands.Bot):
 
     async def setup_hook(self):
         if GUILD_ID:
-            guild = discord.Object(id=int(GUILD_ID))
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            log.info("Synced commands to guild %s", GUILD_ID)
-        else:
-            await self.tree.sync()
-            log.info("Synced global commands")
+            try:
+                guild = discord.Object(id=int(GUILD_ID))
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                log.info("Synced commands to guild %s", GUILD_ID)
+                return
+            except (ValueError, discord.Forbidden, discord.HTTPException) as error:
+                log.error(
+                    "Guild sync to %s failed (%s). Check GUILD_ID is a server "
+                    "the bot has joined, and invite it with the "
+                    "applications.commands scope. Falling back to global sync.",
+                    GUILD_ID,
+                    error,
+                )
+        await self.tree.sync()
+        log.info("Synced global commands")
 
 
 bot = YapsGGBot()
