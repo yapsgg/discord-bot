@@ -1,11 +1,14 @@
 import html
 import json
+import logging
 import os
 import re
 import ssl
 
 import aiohttp
 import certifi
+
+log = logging.getLogger("yapsgg-bot.ai")
 
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
@@ -188,14 +191,18 @@ async def chat(messages):
     if not API_KEY:
         return "AI is not configured yet (OPENROUTER_API_KEY is missing)."
 
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "tools": TOOLS,
-        "max_tokens": MAX_TOKENS,
-    }
     async with new_session() as session:
-        for _ in range(MAX_TOOL_ROUNDS + 1):
+        for round_index in range(MAX_TOOL_ROUNDS + 1):
+            allow_tools = round_index < MAX_TOOL_ROUNDS
+            payload = {
+                "model": MODEL,
+                "messages": messages,
+                "max_tokens": MAX_TOKENS,
+            }
+            if allow_tools:
+                payload["tools"] = TOOLS
+                payload["tool_choice"] = "auto"
+
             try:
                 async with session.post(
                     OPENROUTER_URL,
@@ -205,18 +212,32 @@ async def chat(messages):
                 ) as resp:
                     data = await resp.json()
             except Exception as error:
+                log.warning("OpenRouter request failed: %s", error)
                 return f"AI request failed: {error}"
 
             if resp.status != 200:
                 detail = (data.get("error") or {}).get("message", resp.status)
+                log.warning("OpenRouter error %s: %s", resp.status, detail)
                 return f"AI error: {detail}"
 
             choice = data["choices"][0]["message"]
-            messages.append(choice)
             calls = choice.get("tool_calls") or []
-            if not calls:
-                return choice.get("content") or "(no response)"
+            log.info(
+                "AI round %s: tools=%s calls=%s finish=%s",
+                round_index,
+                allow_tools,
+                [c.get("function", {}).get("name") for c in calls],
+                data["choices"][0].get("finish_reason"),
+            )
 
+            if not calls or not allow_tools:
+                content = choice.get("content")
+                if content:
+                    return content
+                log.warning("AI returned no content: %s", json.dumps(choice)[:500])
+                return "(no response)"
+
+            messages.append(choice)
             for call in calls:
                 function = call.get("function", {})
                 try:
@@ -231,12 +252,5 @@ async def chat(messages):
                         "content": result[:6000],
                     }
                 )
-
-            payload = {
-                "model": MODEL,
-                "messages": messages,
-                "tools": TOOLS,
-                "max_tokens": MAX_TOKENS,
-            }
 
     return "I could not finish that request."
