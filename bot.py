@@ -240,14 +240,14 @@ async def x(interaction: discord.Interaction, link: str):
 
 
 @bot.tree.command(name="ig", description="Download an Instagram reel")
-@app_commands.describe(reels_link="The link to the Instagram reel")
-async def ig(interaction: discord.Interaction, reels_link: str):
-    if not IG_LINK_RE.match(reels_link.strip()):
+@app_commands.describe(reels="The link to the Instagram reel")
+async def ig(interaction: discord.Interaction, reels: str):
+    if not IG_LINK_RE.match(reels.strip()):
         await interaction.response.send_message(
             "Provide a valid instagram.com reel link.", ephemeral=True
         )
         return
-    await fetch_and_send(interaction, reels_link)
+    await fetch_and_send(interaction, reels)
 
 
 def token_looks_valid(value):
