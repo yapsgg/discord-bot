@@ -39,7 +39,7 @@ X_LINK_RE = re.compile(
 )
 IG_LINK_RE = re.compile(
     r"^https?://(?:www\.)?instagram\.com/"
-    r"(?:[A-Za-z0-9_.]+/)?(?:p|reel|reels|tv)/[A-Za-z0-9_-]+",
+    r"(?:[A-Za-z0-9_.]+/)?reels?/[A-Za-z0-9_-]+",
     re.IGNORECASE,
 )
 
@@ -239,18 +239,15 @@ async def x(interaction: discord.Interaction, link: str):
     await fetch_and_send(interaction, link)
 
 
-@bot.tree.command(
-    name="ig", description="Download an Instagram post or reel"
-)
-@app_commands.describe(link="The link to the Instagram post or reel")
-async def ig(interaction: discord.Interaction, link: str):
-    if not IG_LINK_RE.match(link.strip()):
+@bot.tree.command(name="ig", description="Download an Instagram reel")
+@app_commands.describe(reels_link="The link to the Instagram reel")
+async def ig(interaction: discord.Interaction, reels_link: str):
+    if not IG_LINK_RE.match(reels_link.strip()):
         await interaction.response.send_message(
-            "Provide a valid instagram.com post, reel, or TV link.",
-            ephemeral=True,
+            "Provide a valid instagram.com reel link.", ephemeral=True
         )
         return
-    await fetch_and_send(interaction, link)
+    await fetch_and_send(interaction, reels_link)
 
 
 def token_looks_valid(value):
