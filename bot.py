@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("yapsgg-bot")
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip().strip("\"'").strip()
 PREFIX = os.getenv("PREFIX", "!")
 GUILD_ID = os.getenv("GUILD_ID")
 PORT = os.getenv("PORT")
@@ -217,14 +217,34 @@ async def x(interaction: discord.Interaction, link: str):
         )
 
 
+def token_looks_valid(value):
+    return value.count(".") == 2 and len(value) > 50
+
+
 async def main():
     if not TOKEN:
         raise SystemExit("DISCORD_TOKEN is not set")
+    if not token_looks_valid(TOKEN):
+        log.warning(
+            "DISCORD_TOKEN does not look like a bot token "
+            "(expected ~3 dot-separated parts, %d chars). Check the Render "
+            "env var for extra quotes, whitespace, or a Client Secret "
+            "instead of the Bot token.",
+            len(TOKEN),
+        )
     if health:
         await health.start()
     try:
         async with bot:
             await bot.start(TOKEN)
+    except discord.LoginFailure:
+        log.error(
+            "Discord rejected the token (401). On Render, re-copy the Bot "
+            "token from the Developer Portal > Bot > Reset Token, paste it "
+            "into the DISCORD_TOKEN env var with no quotes/spaces, and "
+            "redeploy."
+        )
+        raise SystemExit(1)
     finally:
         if health:
             await health.stop()
