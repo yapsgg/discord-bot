@@ -13,6 +13,8 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import ai
+
 load_dotenv()
 
 logging.basicConfig(
@@ -191,6 +193,96 @@ async def ping_slash(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"pong - {round(bot.latency * 1000)}ms"
     )
+
+
+async def send_long(send, text):
+    text = (text or "(no response)").strip()
+    for start in range(0, len(text), 1900):
+        await send(text[start : start + 1900])
+
+
+async def channel_context(channel, limit=12):
+    lines = []
+    async for message in channel.history(limit=limit):
+        if not message.content:
+            continue
+        who = "YapsGG" if bot.user and message.author == bot.user else message.author.display_name
+        lines.append(f"{who}: {message.content}")
+    if not lines:
+        return []
+    lines.reverse()
+    return [{"role": "system", "content": "Recent channel messages:\n" + "\n".join(lines)}]
+
+
+@bot.event
+async def on_message(message):
+    if message.author.bot or bot.user is None:
+        return
+    if bot.user not in message.mentions:
+        await bot.process_commands(message)
+        return
+
+    prompt = message.content
+    for mention in message.mentions:
+        prompt = prompt.replace(f"<@{mention.id}>", "").replace(
+            f"<@!{mention.id}>", ""
+        )
+    prompt = prompt.strip() or "Hello!"
+
+    try:
+        async with message.channel.typing():
+            messages = [{"role": "system", "content": ai.SYSTEM_PROMPT}]
+            messages += await channel_context(message.channel)
+            messages.append({"role": "user", "content": prompt})
+            answer = await ai.chat(messages)
+        await send_long(message.reply, answer)
+    except Exception:
+        log.exception("AI mention handler failed")
+        await message.reply("Something went wrong while thinking about that.")
+
+
+@bot.tree.command(name="ask", description="Ask the AI assistant anything")
+@app_commands.describe(prompt="Your question or request")
+async def ask(interaction: discord.Interaction, prompt: str):
+    await interaction.response.defer(thinking=True)
+    messages = [
+        {"role": "system", "content": ai.SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    answer = await ai.chat(messages)
+    await send_long(interaction.followup.send, answer)
+
+
+@bot.tree.command(
+    name="summarize", description="Summarize recent messages in this channel"
+)
+@app_commands.describe(count="How many recent messages to summarize")
+async def summarize(
+    interaction: discord.Interaction,
+    count: app_commands.Range[int, 5, 200] = 50,
+):
+    await interaction.response.defer(thinking=True)
+    lines = []
+    async for message in interaction.channel.history(limit=count):
+        if message.content:
+            lines.append(f"{message.author.display_name}: {message.content}")
+    if not lines:
+        await interaction.followup.send("There is nothing to summarize.")
+        return
+    lines.reverse()
+    transcript = "\n".join(lines)[:14000]
+    messages = [
+        {"role": "system", "content": ai.SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                "Summarize this Discord conversation. Give a one-line "
+                "overview then concise key points:\n\n" + transcript
+            ),
+        },
+    ]
+    answer = await ai.chat(messages)
+    await send_long(interaction.followup.send, answer)
 
 
 async def fetch_and_send(interaction: discord.Interaction, link: str):
